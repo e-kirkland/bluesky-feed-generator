@@ -29,8 +29,8 @@ def operations_callback(ops: defaultdict) -> None:
             f': {inlined_text}'
         )
 
-        # only python-related posts
-        if 'python' in record.text.lower():
+        # only tiktok-related posts
+        if 'tiktok' in record.text.lower():
             reply_root = reply_parent = None
             if record.reply:
                 reply_root = record.reply.root.uri
