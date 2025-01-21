@@ -4,3 +4,4 @@ atproto
 gunicorn
 peewee~=3.16.2
 Flask~=2.3.2
+waitress

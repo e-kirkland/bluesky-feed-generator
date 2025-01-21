@@ -51,6 +51,7 @@ def _get_ops_by_type(commit: models.ComAtprotoSyncSubscribeRepos.Commit) -> defa
 
 
 def run(name, operations_callback, stream_stop_event=None):
+    logger.debug('RUNNING STREAM')
     while stream_stop_event is None or not stream_stop_event.is_set():
         try:
             _run(name, operations_callback, stream_stop_event)
