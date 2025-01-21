@@ -1,26 +1,31 @@
 from datetime import datetime
+import os
+from peewee import *
+from server.config import DATABASE_PATH
 
-import peewee
+# Ensure the data directory exists
+os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
 
-db = peewee.SqliteDatabase('feed_database.db')
+# Create the database connection
+db = SqliteDatabase(DATABASE_PATH)
 
 
-class BaseModel(peewee.Model):
+class BaseModel(Model):
     class Meta:
         database = db
 
 
 class Post(BaseModel):
-    uri = peewee.CharField(index=True)
-    cid = peewee.CharField()
-    reply_parent = peewee.CharField(null=True, default=None)
-    reply_root = peewee.CharField(null=True, default=None)
-    indexed_at = peewee.DateTimeField(default=datetime.utcnow)
+    uri = CharField(index=True)
+    cid = CharField()
+    reply_parent = CharField(null=True, default=None)
+    reply_root = CharField(null=True, default=None)
+    indexed_at = DateTimeField(default=datetime.utcnow)
 
 
 class SubscriptionState(BaseModel):
-    service = peewee.CharField(unique=True)
-    cursor = peewee.BigIntegerField()
+    service = CharField(unique=True)
+    cursor = BigIntegerField()
 
 
 if db.is_closed():

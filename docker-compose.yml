@@ -19,9 +19,11 @@ services:
       start_period: 5s 
     volumes:
       - .:/app
-      - sqlite_data:/app/data
+      - sqlite_data:/app/data:rw
     working_dir: /app
+    user: "root"  # Temporary for debugging
     command: flask --debug run
 
 volumes:
   sqlite_data:
+    driver: local
