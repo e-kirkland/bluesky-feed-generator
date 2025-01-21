@@ -25,3 +25,6 @@ FEED_URI = os.environ.get('FEED_URI')
 if FEED_URI is None:
     raise RuntimeError('Publish your feed first (run publish_feed.py) to obtain Feed URI. '
                        'Set this URI to "FEED_URI" environment variable.')
+
+# Update the database path to use the data directory
+DATABASE_PATH = 'data/feed.db'  # This will resolve to /app/data/feed.db in the container
