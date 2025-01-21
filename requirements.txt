@@ -1,4 +1,6 @@
-atproto==0.0.56
+flask
+python-dotenv
+atproto
+gunicorn
 peewee~=3.16.2
 Flask~=2.3.2
-python-dotenv~=1.0.0

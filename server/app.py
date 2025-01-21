@@ -88,3 +88,8 @@ def get_feed_skeleton():
         return 'Malformed cursor', 400
 
     return jsonify(body)
+
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy"}), 200
