@@ -1,5 +1,6 @@
 services:
   api:
+    user: "1000:1000"
     container_name: api
     build: .
     ports:
