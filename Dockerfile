@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create data directory for SQLite and set permissions
 RUN mkdir -p /app/data && \
-    chown -R 1000:1000 /app/data && \
+    chown -R ubuntu:ubuntu /app/data && \
     chmod 777 /app/data
 
 # Copy requirements first to leverage Docker cache
