@@ -25,9 +25,9 @@ RUN useradd -m ubuntu && chown -R ubuntu:ubuntu /app
 USER ubuntu
 
 # Change permissions for data directory
-RUN touch /app/data/your_database.sqlite && \
-    chown ubuntu:ubuntu /app/data/your_database.sqlite && \
-    chmod 777 /app/data/your_database.sqlite
+RUN touch /app/data/feed.db && \
+    chown ubuntu:ubuntu /app/data/feed.db && \
+    chmod 777 /app/data/feed.db
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
