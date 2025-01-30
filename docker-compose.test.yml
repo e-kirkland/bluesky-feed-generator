@@ -18,13 +18,9 @@ services:
       start_period: 5s
     volumes:
       - .:/app
-      - sqlite_data:/app/data:rw 
+      - ./data:/app/data:rw
     working_dir: /app
     command: waitress-serve --host=0.0.0.0 --port=5000 server.app:app
-
-volumes:
-  sqlite_data:
-    driver: local
 
 networks:
   app_network:
