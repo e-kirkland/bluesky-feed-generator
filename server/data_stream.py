@@ -23,6 +23,8 @@ _INTERESTED_RECORDS = {
 
 def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dict:
     """Get operations from message grouped by type"""
+    logger.debug(f"Processing message with {len(message.ops)} operations")
+    
     ops = {
         models.ids.AppBskyFeedPost: {
             'created': [],
@@ -31,13 +33,18 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
     }
 
     for op in message.ops:
+        logger.debug(f"Processing operation: path={op.path}, action={op.action}")
+        
         if not op.path.startswith('app.bsky.feed.post'):
+            logger.debug(f"Skipping non-post operation: {op.path}")
             continue
 
         if op.action == 'create':
             if not isinstance(op.record, models.AppBskyFeedPost.Main):
+                logger.debug(f"Skipping non-post record type: {type(op.record)}")
                 continue
 
+            logger.debug(f"Found post: repo={message.repo}, path={op.path}")
             ops[models.ids.AppBskyFeedPost]['created'].append({
                 'uri': f'at://{message.repo}/{op.path}',
                 'cid': op.cid,
@@ -45,10 +52,12 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
                 'record': op.record
             })
         elif op.action == 'delete':
+            logger.debug(f"Found deleted post: repo={message.repo}, path={op.path}")
             ops[models.ids.AppBskyFeedPost]['deleted'].append({
                 'uri': f'at://{message.repo}/{op.path}'
             })
 
+    logger.debug(f"Processed message: found {len(ops[models.ids.AppBskyFeedPost]['created'])} created posts and {len(ops[models.ids.AppBskyFeedPost]['deleted'])} deleted posts")
     return ops
 
 
@@ -71,17 +80,22 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
 
                 while not stream_stop_event.is_set():
                     message = await websocket.recv()
+                    logger.debug(f"Received message type: {type(message)}")
                     try:
                         # Try parsing as JSON first
                         if isinstance(message, str):
+                            logger.debug("Parsing message as JSON")
                             data = json.loads(message)
                         # If it's bytes, try CBOR decoding
                         else:
+                            logger.debug("Parsing message as CBOR")
                             data = cbor2.loads(message)
                         
                         if '#commit' in data:
+                            logger.debug("Found commit data in message")
                             commit_data = data['#commit']
                             cursor = commit_data.get('seq')
+                            logger.debug(f"Processing commit with cursor: {cursor}")
                             ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(**commit_data))
 
                             try:
@@ -91,6 +105,8 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
 
                             if state and cursor:
                                 state.update_cursor(cursor)
+                        else:
+                            logger.debug(f"Message does not contain commit data. Keys: {data.keys()}")
                     except Exception as e:
                         logger.exception(f'Error processing message: {e}')
                         continue

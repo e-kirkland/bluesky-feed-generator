@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 
 from server.logger import logger
 
+logger.setLevel(logging.DEBUG)
+
 load_dotenv()
 
 SERVICE_DID = os.environ.get('SERVICE_DID')
