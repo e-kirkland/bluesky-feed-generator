@@ -61,16 +61,13 @@ def run(name, operations_callback, stream_stop_event=None):
 
 
 def _run(name, operations_callback, stream_stop_event=None):
-    state = SubscriptionState.get_or_create(SubscriptionState.service == name)
+    state = SubscriptionState.get_or_create(name)
 
     params = None
     if state:
         params = models.ComAtprotoSyncSubscribeRepos.Params(cursor=state.cursor)
 
     client = FirehoseSubscribeReposClient(params)
-
-    if not state:
-        SubscriptionState.create(service=name, cursor=0)
 
     def on_message_handler(message: firehose_models.MessageFrame) -> None:
         # stop on next message if requested
@@ -86,7 +83,8 @@ def _run(name, operations_callback, stream_stop_event=None):
         if commit.seq % 1000 == 0:  # lower value could lead to performance issues
             logger.debug(f'Updated cursor for {name} to {commit.seq}')
             client.update_params(models.ComAtprotoSyncSubscribeRepos.Params(cursor=commit.seq))
-            SubscriptionState.update(cursor=commit.seq).where(SubscriptionState.service == name).execute()
+            if state:
+                state.update_cursor(commit.seq)
 
         if not commit.blocks:
             return
