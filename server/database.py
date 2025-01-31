@@ -1,33 +1,42 @@
 from datetime import datetime
 import os
-from peewee import *
-from server.config import DATABASE_PATH
+from sqlalchemy import create_engine, Column, String, DateTime, BigInteger
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, scoped_session
+from server.config import SUPABASE_URL, SUPABASE_DB_PASSWORD
 
-# Ensure the data directory exists
-os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+# Create database URL from Supabase credentials
+DATABASE_URL = f"postgresql://postgres:{SUPABASE_DB_PASSWORD}@{SUPABASE_URL}:5432/postgres"
 
-# Create the database connection
-db = SqliteDatabase(DATABASE_PATH)
+# Create SQLAlchemy engine
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+db_session = scoped_session(SessionLocal)
 
+Base = declarative_base()
 
-class BaseModel(Model):
-    class Meta:
-        database = db
+class Post(Base):
+    __tablename__ = "posts"
 
+    uri = Column(String, primary_key=True, index=True)
+    cid = Column(String, nullable=False)
+    reply_parent = Column(String, nullable=True)
+    reply_root = Column(String, nullable=True)
+    indexed_at = Column(DateTime, default=datetime.utcnow)
 
-class Post(BaseModel):
-    uri = CharField(index=True)
-    cid = CharField()
-    reply_parent = CharField(null=True, default=None)
-    reply_root = CharField(null=True, default=None)
-    indexed_at = DateTimeField(default=datetime.utcnow)
+class SubscriptionState(Base):
+    __tablename__ = "subscription_states"
 
+    service = Column(String, primary_key=True)
+    cursor = Column(BigInteger, nullable=False)
 
-class SubscriptionState(BaseModel):
-    service = CharField(unique=True)
-    cursor = BigIntegerField()
+# Create all tables
+Base.metadata.create_all(bind=engine)
 
-
-if db.is_closed():
-    db.connect()
-    db.create_tables([Post, SubscriptionState])
+def get_db():
+    """Get database session"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

@@ -2,6 +2,7 @@ flask
 python-dotenv
 atproto
 gunicorn
-peewee~=3.16.2
+psycopg2-binary
+SQLAlchemy~=2.0.0
 Flask~=2.3.2
 waitress

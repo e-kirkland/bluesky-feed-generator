@@ -11,6 +11,10 @@ SERVICE_DID = os.environ.get('SERVICE_DID')
 HOSTNAME = os.environ.get('HOSTNAME')
 FLASK_RUN_FROM_CLI = os.environ.get('FLASK_RUN_FROM_CLI')
 
+# Supabase configuration
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_DB_PASSWORD = os.environ.get('SUPABASE_DB_PASSWORD')
+
 if FLASK_RUN_FROM_CLI:
     logger.setLevel(logging.DEBUG)
 
@@ -20,6 +24,8 @@ if HOSTNAME is None:
 if SERVICE_DID is None:
     SERVICE_DID = f'did:web:{HOSTNAME}'
 
+if SUPABASE_URL is None or SUPABASE_DB_PASSWORD is None:
+    raise RuntimeError('Supabase configuration is missing. Please set SUPABASE_URL and SUPABASE_DB_PASSWORD')
 
 FEED_URI = os.environ.get('FEED_URI')
 if FEED_URI is None:

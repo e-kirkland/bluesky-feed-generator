@@ -1,9 +1,10 @@
 from collections import defaultdict
+from datetime import datetime
 
 from atproto import models
 
 from server.logger import logger
-from server.database import db, Post
+from server.database import db_session, Post
 
 
 def operations_callback(ops: defaultdict) -> None:
@@ -41,17 +42,29 @@ def operations_callback(ops: defaultdict) -> None:
                 'cid': created_post['cid'],
                 'reply_parent': reply_parent,
                 'reply_root': reply_root,
+                'indexed_at': datetime.utcnow()
             }
             posts_to_create.append(post_dict)
 
     posts_to_delete = ops[models.ids.AppBskyFeedPost]['deleted']
     if posts_to_delete:
         post_uris_to_delete = [post['uri'] for post in posts_to_delete]
-        Post.delete().where(Post.uri.in_(post_uris_to_delete))
+        db_session.query(Post).filter(Post.uri.in_(post_uris_to_delete)).delete()
         logger.debug(f'Deleted from feed: {len(post_uris_to_delete)}')
 
     if posts_to_create:
-        with db.atomic():
+        try:
             for post_dict in posts_to_create:
-                Post.create(**post_dict)
-        logger.debug(f'Added to feed: {len(posts_to_create)}')
+                post = Post(
+                    uri=post_dict['uri'],
+                    cid=post_dict['cid'],
+                    reply_parent=post_dict['reply_parent'],
+                    reply_root=post_dict['reply_root'],
+                    indexed_at=post_dict['indexed_at']
+                )
+            db_session.add(post)
+            db_session.commit()
+            logger.debug(f'Added to feed: {len(posts_to_create)}')
+        except Exception as e:
+            db_session.rollback()
+            raise e
