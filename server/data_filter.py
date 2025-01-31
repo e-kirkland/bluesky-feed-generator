@@ -29,27 +29,25 @@ def operations_callback(ops: defaultdict) -> None:
             
         record = created_post['record']
         text = record.text if hasattr(record, 'text') else ''
+        inlined_text = text.replace('\n', ' ')
+        
+        # Store all posts from active users
+        reply_root = reply_parent = None
+        if hasattr(record, 'reply'):
+            reply = record.reply
+            reply_root = reply.root.uri if hasattr(reply, 'root') else None
+            reply_parent = reply.parent.uri if hasattr(reply, 'parent') else None
 
-        # Check for TikTok posts
-        if 'tiktok' in text.lower():
-            inlined_text = text.replace('\n', ' ')
-            logger.info(f"Found TikTok post from {author}: {inlined_text[:100]}...")
-            
-            reply_root = reply_parent = None
-            if hasattr(record, 'reply'):
-                reply = record.reply
-                reply_root = reply.root.uri if hasattr(reply, 'root') else None
-                reply_parent = reply.parent.uri if hasattr(reply, 'parent') else None
-
-            post_data = {
-                'uri': created_post['uri'],
-                'cid': created_post['cid'],
-                'reply_parent': reply_parent,
-                'reply_root': reply_root
-            }
-            
-            logger.debug(f"Creating post with data: {post_data}")
-            posts_to_create.append(post_data)
+        post_data = {
+            'uri': created_post['uri'],
+            'cid': created_post['cid'],
+            'reply_parent': reply_parent,
+            'reply_root': reply_root
+        }
+        
+        logger.debug(f"Creating post with data: {post_data}")
+        posts_to_create.append(post_data)
+        logger.info(f"Found post from {author}: {inlined_text[:100]}...")
 
     posts_to_delete = ops[models.ids.AppBskyFeedPost]['deleted']
     if posts_to_delete:
@@ -58,7 +56,7 @@ def operations_callback(ops: defaultdict) -> None:
         Post.delete_many(post_uris_to_delete)
 
     if posts_to_create:
-        logger.info(f"Storing {len(posts_to_create)} new TikTok posts")
+        logger.info(f"Storing {len(posts_to_create)} new posts")
         try:
             for post_dict in posts_to_create:
                 Post.create(**post_dict)
