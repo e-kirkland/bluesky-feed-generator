@@ -28,8 +28,7 @@ def operations_callback(ops: defaultdict) -> None:
 
         # Log all posts for debugging
         post_with_images = (hasattr(record, 'embed') and 
-                          hasattr(record.embed, '$type') and 
-                          record.embed.$type == 'app.bsky.embed.images')
+                          getattr(record.embed, '$type', None) == 'app.bsky.embed.images')
         
         text = record.text if hasattr(record, 'text') else ''
         inlined_text = text.replace('\n', ' ')
