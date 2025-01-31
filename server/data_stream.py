@@ -27,6 +27,13 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
     logger.debug(f"Message data: repo={message.repo}, time={message.time}")
     logger.debug(f"Raw ops data: {message.ops}")
     
+    # Add detailed ops logging
+    for op in message.ops:
+        logger.debug(f"Operation details:")
+        logger.debug(f"  - Action: {op}")
+        for key, value in op.items():
+            logger.debug(f"  - {key}: {value}")
+    
     ops = {
         models.ids.AppBskyFeedPost: {
             'created': [],
@@ -104,7 +111,9 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
                             
                             if message_type == '#commit':
                                 logger.debug("Processing commit message")
+                                logger.debug(f"Commit data: {data}")
                                 if 'ops' in data:
+                                    logger.debug(f"Found ops in data: {data['ops']}")
                                     ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(
                                         seq=data.get('seq', 0),
                                         repo=data.get('repo', ''),
