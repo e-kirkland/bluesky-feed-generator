@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 from server.logger import logger
 
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 load_dotenv()
 
