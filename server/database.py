@@ -48,23 +48,29 @@ class Post:
 
     @staticmethod
     def get_recent(limit: int = 20, cursor: Optional[str] = None) -> List['Post']:
-        query = supabase.table('posts').select('*').order('indexed_at', desc=True)
-        
-        if cursor:
-            query = query.lt('indexed_at', cursor)
-        
-        result = query.limit(limit).execute()
-        
-        return [
-            Post(
-                uri=row['uri'],
-                cid=row['cid'],
-                reply_parent=row['reply_parent'],
-                reply_root=row['reply_root'],
-                indexed_at=datetime.fromisoformat(row['indexed_at'])
-            )
-            for row in result.data
-        ]
+        try:
+            logger.info(f"Getting recent posts (limit={limit}, cursor={cursor})")
+            query = supabase.table('posts').select('*').order('indexed_at', desc=True)
+            
+            if cursor:
+                query = query.lt('indexed_at', cursor)
+            
+            result = query.limit(limit).execute()
+            logger.info(f"Found {len(result.data)} posts")
+            
+            return [
+                Post(
+                    uri=row['uri'],
+                    cid=row['cid'],
+                    reply_parent=row['reply_parent'],
+                    reply_root=row['reply_root'],
+                    indexed_at=datetime.fromisoformat(row['indexed_at'])
+                )
+                for row in result.data
+            ]
+        except Exception as e:
+            logger.error(f"Error getting recent posts: {str(e)}")
+            raise
 
 class SubscriptionState:
     def __init__(self, service: str, cursor: int):
