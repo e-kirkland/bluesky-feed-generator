@@ -3,6 +3,7 @@ from typing import List, Optional
 from supabase import create_client, Client
 from server.config import SUPABASE_URL, SUPABASE_ANON_KEY
 from server.logger import logger
+import re
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -60,13 +61,22 @@ class Post:
             result = query.limit(limit).execute()
             logger.info(f"Found {len(result.data)} posts")
             
+            def parse_datetime(dt_str: str) -> datetime:
+                # Remove microseconds if present (everything between . and +/Z)
+                dt_str = re.sub(r'\.\d+(?=[-+Z])', '', dt_str)
+                # Remove timezone offset if present
+                dt_str = re.sub(r'[-+]\d{2}:?\d{2}$', '', dt_str)
+                # Remove Z if present
+                dt_str = dt_str.replace('Z', '')
+                return datetime.fromisoformat(dt_str)
+            
             return [
                 Post(
                     uri=row['uri'],
                     cid=row['cid'],
                     reply_parent=row['reply_parent'],
                     reply_root=row['reply_root'],
-                    indexed_at=datetime.fromisoformat(row['indexed_at'])
+                    indexed_at=parse_datetime(row['indexed_at'])
                 )
                 for row in result.data
             ]
