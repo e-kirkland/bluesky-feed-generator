@@ -6,6 +6,7 @@ from collections import defaultdict
 import time
 import threading
 from typing import Callable, Optional
+import cbor2
 
 from atproto import Client, models
 from atproto.exceptions import FirehoseError
@@ -66,20 +67,29 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
 
                 while not stream_stop_event.is_set():
                     message = await websocket.recv()
-                    data = json.loads(message)
-                    
-                    if '#commit' in data:
-                        commit_data = data['#commit']
-                        cursor = commit_data.get('seq')
-                        ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(**commit_data))
+                    try:
+                        # Try parsing as JSON first
+                        if isinstance(message, str):
+                            data = json.loads(message)
+                        # If it's bytes, try CBOR decoding
+                        else:
+                            data = cbor2.loads(message)
+                        
+                        if '#commit' in data:
+                            commit_data = data['#commit']
+                            cursor = commit_data.get('seq')
+                            ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(**commit_data))
 
-                        try:
-                            operations_callback(ops)
-                        except Exception as e:
-                            logger.exception(f'Error in operations callback: {e}')
+                            try:
+                                operations_callback(ops)
+                            except Exception as e:
+                                logger.exception(f'Error in operations callback: {e}')
 
-                        if state and cursor:
-                            state.update_cursor(cursor)
+                            if state and cursor:
+                                state.update_cursor(cursor)
+                    except Exception as e:
+                        logger.exception(f'Error processing message: {e}')
+                        continue
 
         except Exception as e:
             logger.exception(f'Websocket error: {e}')
