@@ -56,14 +56,18 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
     """Websocket client for firehose subscription"""
     uri = "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
     
+    logger.info("Starting firehose connection...")
+    
     state = SubscriptionState.get_or_create(name)
     cursor = state.cursor if state else 0
 
     while not stream_stop_event.is_set():
         try:
+            logger.info(f"Connecting to firehose with cursor: {cursor}")
             async with websockets.connect(uri) as websocket:
                 if cursor:
                     await websocket.send(json.dumps({"cursor": cursor}))
+                logger.info("Successfully connected to firehose")
 
                 while not stream_stop_event.is_set():
                     message = await websocket.recv()

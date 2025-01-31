@@ -15,7 +15,12 @@ def operations_callback(ops: defaultdict) -> None:
     # for example, let's create our custom feed that will contain all posts that contains alf related text
 
     posts_to_create = []
-    for created_post in ops[models.ids.AppBskyFeedPost]['created']:
+    
+    # Log the total number of posts received
+    created_posts = ops[models.ids.AppBskyFeedPost]['created']
+    logger.info(f"Received {len(created_posts)} posts from firehose")
+    
+    for created_post in created_posts:
         author = created_post['author']
         record = created_post['record']
 
@@ -30,6 +35,7 @@ def operations_callback(ops: defaultdict) -> None:
             f': {inlined_text}'
         )
 
+        # Check for TikTok posts
         if 'tiktok' in record.text.lower():
             logger.info(f"Found TikTok post from {author}: {inlined_text[:100]}...")
             reply_root = reply_parent = None
@@ -43,6 +49,8 @@ def operations_callback(ops: defaultdict) -> None:
                 'reply_parent': reply_parent,
                 'reply_root': reply_root
             })
+        else:
+            logger.debug(f"Skipping non-TikTok post: {inlined_text[:100]}...")
 
     posts_to_delete = ops[models.ids.AppBskyFeedPost]['deleted']
     if posts_to_delete:
