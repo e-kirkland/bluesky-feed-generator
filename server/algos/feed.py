@@ -1,5 +1,9 @@
 from typing import Optional
+from server import config
 from server.database import Post
+
+# Define the feed URI from config
+uri = config.FEED_URI
 
 def handler(cursor: Optional[str], limit: int) -> dict:
     """Handle feed generation"""
