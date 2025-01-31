@@ -4,7 +4,8 @@ import time
 import threading
 from typing import Callable, Optional
 
-from atproto import AtUri, CAR, firehose_models, Client, models, parse_subscribe_repos_message
+from atproto import Client, models
+from atproto.firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
 from atproto.exceptions import FirehoseError
 
 from server.database import SubscriptionState
