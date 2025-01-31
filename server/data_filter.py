@@ -4,7 +4,7 @@ from datetime import datetime
 from atproto import models
 
 from server.logger import logger
-from server.database import Post
+from server.database import Post, User
 
 
 def operations_callback(ops: defaultdict) -> None:
@@ -22,8 +22,12 @@ def operations_callback(ops: defaultdict) -> None:
     
     for created_post in created_posts:
         author = created_post['author']
-        record = created_post['record']
         
+        # Only process posts from active users
+        if not User.is_active(author):
+            continue
+            
+        record = created_post['record']
         text = record.text if hasattr(record, 'text') else ''
 
         # Check for TikTok posts

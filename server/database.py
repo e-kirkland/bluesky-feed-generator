@@ -112,3 +112,76 @@ class SubscriptionState:
         except Exception as e:
             logger.error(f"Error updating cursor for service {self.service}: {str(e)}")
             raise
+
+class User:
+    def __init__(self, did: str, added_at: datetime = None, active: bool = True):
+        self.did = did
+        self.added_at = added_at or datetime.utcnow()
+        self.active = active
+
+    @staticmethod
+    def add(did: str) -> 'User':
+        """Add a new user or reactivate an existing one"""
+        try:
+            logger.info(f"Adding user to feed: {did}")
+            data = {
+                'did': did,
+                'added_at': datetime.utcnow().isoformat(),
+                'active': True
+            }
+            
+            # Try to update existing user first
+            result = supabase.table('users').update(data).eq('did', did).execute()
+            
+            # If no user was updated, insert new one
+            if not result.data:
+                result = supabase.table('users').insert(data).execute()
+            
+            logger.info(f"Successfully added user: {did}")
+            return User(did=did)
+        except Exception as e:
+            logger.error(f"Error adding user {did}: {str(e)}")
+            raise
+
+    @staticmethod
+    def remove(did: str) -> None:
+        """Deactivate a user and remove their posts"""
+        try:
+            logger.info(f"Removing user from feed: {did}")
+            
+            # Deactivate user
+            result = supabase.table('users').update({
+                'active': False
+            }).eq('did', did).execute()
+            
+            # Remove their posts
+            posts = supabase.table('posts').select('uri').eq('author', did).execute()
+            if posts.data:
+                uris = [post['uri'] for post in posts.data]
+                Post.delete_many(uris)
+            
+            logger.info(f"Successfully removed user and their posts: {did}")
+        except Exception as e:
+            logger.error(f"Error removing user {did}: {str(e)}")
+            raise
+
+    @staticmethod
+    def is_active(did: str) -> bool:
+        """Check if a user is active"""
+        try:
+            result = supabase.table('users').select('active').eq('did', did).execute()
+            return bool(result.data and result.data[0]['active'])
+        except Exception as e:
+            logger.error(f"Error checking user status for {did}: {str(e)}")
+            raise
+
+    @staticmethod
+    def get_all_active() -> List[str]:
+        """Get all active users"""
+        try:
+            logger.debug("Getting all active users")
+            result = supabase.table('users').select('did').eq('active', True).execute()
+            return [row['did'] for row in result.data]
+        except Exception as e:
+            logger.error(f"Error getting active users: {str(e)}")
+            raise

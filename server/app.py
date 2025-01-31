@@ -9,6 +9,7 @@ from flask import Flask, jsonify, request
 
 from server.algos import algos
 from server.data_filter import operations_callback
+from server.database import User
 
 app = Flask(__name__)
 
@@ -98,3 +99,44 @@ def get_feed_skeleton():
 @app.route('/health')
 def health_check():
     return jsonify({"status": "healthy"}), 200
+
+
+@app.route('/api/users', methods=['POST'])
+def add_user():
+    """Add a user to the feed"""
+    try:
+        data = request.get_json()
+        if not data or 'did' not in data:
+            return jsonify({'error': 'Missing did in request'}), 400
+        
+        did = data['did']
+        User.add(did)
+        return jsonify({'message': f'Successfully added user: {did}'}), 200
+    except Exception as e:
+        app.logger.error(f"Error adding user: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users/<did>', methods=['DELETE'])
+def remove_user(did):
+    """Remove a user from the feed"""
+    try:
+        if not User.is_active(did):
+            return jsonify({'message': 'User not found or already inactive'}), 404
+        
+        User.remove(did)
+        return jsonify({'message': f'Successfully removed user: {did}'}), 200
+    except Exception as e:
+        app.logger.error(f"Error removing user: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users', methods=['GET'])
+def list_users():
+    """List all active users"""
+    try:
+        users = User.get_all_active()
+        return jsonify({'users': users}), 200
+    except Exception as e:
+        app.logger.error(f"Error listing users: {str(e)}")
+        return jsonify({'error': str(e)}), 500
