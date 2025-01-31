@@ -1,6 +1,6 @@
 flask
 python-dotenv
-atproto>=0.0.21
+atproto==0.0.58
 gunicorn
 supabase>=1.0.3
 Flask~=2.3.2
