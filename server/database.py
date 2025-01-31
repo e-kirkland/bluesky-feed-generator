@@ -1,42 +1,80 @@
 from datetime import datetime
-import os
-from sqlalchemy import create_engine, Column, String, DateTime, BigInteger
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
-from server.config import SUPABASE_URL, SUPABASE_DB_PASSWORD
+from typing import List, Optional
+from supabase import create_client, Client
+from server.config import SUPABASE_URL, SUPABASE_ANON_KEY
 
-# Create database URL from Supabase credentials
-DATABASE_URL = f"postgresql://postgres:{SUPABASE_DB_PASSWORD}@{SUPABASE_URL}:5432/postgres"
+# Initialize Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-# Create SQLAlchemy engine
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-db_session = scoped_session(SessionLocal)
+class Post:
+    def __init__(self, uri: str, cid: str, reply_parent: Optional[str] = None, 
+                 reply_root: Optional[str] = None, indexed_at: datetime = None):
+        self.uri = uri
+        self.cid = cid
+        self.reply_parent = reply_parent
+        self.reply_root = reply_root
+        self.indexed_at = indexed_at or datetime.utcnow()
 
-Base = declarative_base()
+    @staticmethod
+    def create(uri: str, cid: str, reply_parent: Optional[str] = None, 
+               reply_root: Optional[str] = None) -> 'Post':
+        post = Post(uri, cid, reply_parent, reply_root)
+        data = {
+            'uri': post.uri,
+            'cid': post.cid,
+            'reply_parent': post.reply_parent,
+            'reply_root': post.reply_root,
+            'indexed_at': post.indexed_at.isoformat()
+        }
+        supabase.table('posts').insert(data).execute()
+        return post
 
-class Post(Base):
-    __tablename__ = "posts"
+    @staticmethod
+    def delete_many(uris: List[str]) -> None:
+        supabase.table('posts').delete().in_('uri', uris).execute()
 
-    uri = Column(String, primary_key=True, index=True)
-    cid = Column(String, nullable=False)
-    reply_parent = Column(String, nullable=True)
-    reply_root = Column(String, nullable=True)
-    indexed_at = Column(DateTime, default=datetime.utcnow)
+    @staticmethod
+    def get_recent(limit: int = 20, cursor: Optional[str] = None) -> List['Post']:
+        query = supabase.table('posts').select('*').order('indexed_at', desc=True)
+        
+        if cursor:
+            query = query.lt('indexed_at', cursor)
+        
+        result = query.limit(limit).execute()
+        
+        return [
+            Post(
+                uri=row['uri'],
+                cid=row['cid'],
+                reply_parent=row['reply_parent'],
+                reply_root=row['reply_root'],
+                indexed_at=datetime.fromisoformat(row['indexed_at'])
+            )
+            for row in result.data
+        ]
 
-class SubscriptionState(Base):
-    __tablename__ = "subscription_states"
+class SubscriptionState:
+    def __init__(self, service: str, cursor: int):
+        self.service = service
+        self.cursor = cursor
 
-    service = Column(String, primary_key=True)
-    cursor = Column(BigInteger, nullable=False)
+    @staticmethod
+    def get_or_create(service: str) -> 'SubscriptionState':
+        result = supabase.table('subscription_states').select('*').eq('service', service).execute()
+        
+        if result.data:
+            return SubscriptionState(service=result.data[0]['service'], 
+                                   cursor=result.data[0]['cursor'])
+        
+        state = SubscriptionState(service=service, cursor=0)
+        supabase.table('subscription_states').insert({
+            'service': state.service,
+            'cursor': state.cursor
+        }).execute()
+        
+        return state
 
-# Create all tables
-Base.metadata.create_all(bind=engine)
-
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    def update_cursor(self, new_cursor: int) -> None:
+        supabase.table('subscription_states').update({
+            'cursor': new_cursor
+        }).eq('service', self.service).execute()
