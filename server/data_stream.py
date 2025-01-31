@@ -33,28 +33,31 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
     }
 
     for op in message.ops:
-        logger.debug(f"Processing operation: path={op.path}, action={op.action}")
+        logger.debug(f"Processing operation: path={op.get('path')}, action={op.get('action')}")
         
-        if not op.path.startswith('app.bsky.feed.post'):
-            logger.debug(f"Skipping non-post operation: {op.path}")
+        path = op.get('path', '')
+        if not path.startswith('app.bsky.feed.post'):
+            logger.debug(f"Skipping non-post operation: {path}")
             continue
 
-        if op.action == 'create':
-            if not isinstance(op.record, models.AppBskyFeedPost.Main):
-                logger.debug(f"Skipping non-post record type: {type(op.record)}")
+        action = op.get('action')
+        if action == 'create':
+            record = op.get('record')
+            if not record:
+                logger.debug("No record in create operation")
                 continue
 
-            logger.debug(f"Found post: repo={message.repo}, path={op.path}")
+            logger.debug(f"Found post: repo={message.repo}, path={path}")
             ops[models.ids.AppBskyFeedPost]['created'].append({
-                'uri': f'at://{message.repo}/{op.path}',
-                'cid': op.cid,
+                'uri': f'at://{message.repo}/{path}',
+                'cid': op.get('cid'),
                 'author': message.repo,
-                'record': op.record
+                'record': record
             })
-        elif op.action == 'delete':
-            logger.debug(f"Found deleted post: repo={message.repo}, path={op.path}")
+        elif action == 'delete':
+            logger.debug(f"Found deleted post: repo={message.repo}, path={path}")
             ops[models.ids.AppBskyFeedPost]['deleted'].append({
-                'uri': f'at://{message.repo}/{op.path}'
+                'uri': f'at://{message.repo}/{path}'
             })
 
     logger.debug(f"Processed message: found {len(ops[models.ids.AppBskyFeedPost]['created'])} created posts and {len(ops[models.ids.AppBskyFeedPost]['deleted'])} deleted posts")
@@ -91,22 +94,32 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
                             logger.debug("Parsing message as CBOR")
                             data = cbor2.loads(message)
                         
-                        if '#commit' in data:
-                            logger.debug("Found commit data in message")
-                            commit_data = data['#commit']
-                            cursor = commit_data.get('seq')
-                            logger.debug(f"Processing commit with cursor: {cursor}")
-                            ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(**commit_data))
+                        # Handle different message types
+                        if 't' in data:
+                            message_type = data.get('t')
+                            logger.debug(f"Message type: {message_type}")
+                            
+                            if message_type == '#commit':
+                                logger.debug("Processing commit message")
+                                if 'ops' in data:
+                                    ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(
+                                        seq=data.get('seq', 0),
+                                        repo=data.get('repo', ''),
+                                        ops=data.get('ops', []),
+                                        time=data.get('time', ''),
+                                        blobs=data.get('blocks', [])
+                                    ))
+                                    try:
+                                        operations_callback(ops)
+                                    except Exception as e:
+                                        logger.exception(f'Error in operations callback: {e}')
 
-                            try:
-                                operations_callback(ops)
-                            except Exception as e:
-                                logger.exception(f'Error in operations callback: {e}')
-
-                            if state and cursor:
-                                state.update_cursor(cursor)
+                                    if state and data.get('seq'):
+                                        state.update_cursor(data['seq'])
+                            else:
+                                logger.debug(f"Skipping message type: {message_type}")
                         else:
-                            logger.debug(f"Message does not contain commit data. Keys: {data.keys()}")
+                            logger.debug(f"Message does not contain type. Keys: {data.keys()}")
                     except Exception as e:
                         logger.exception(f'Error processing message: {e}')
                         continue
