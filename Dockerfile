@@ -19,8 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create a non-root user and switch to it
-RUN useradd -m ubuntu && \
+# Create ubuntu user with specific UID/GID
+RUN groupadd -g 1001 ubuntu && \
+    useradd -u 1001 -g ubuntu -m ubuntu && \
     chown -R ubuntu:ubuntu /app && \
     chown -R ubuntu:ubuntu /app/data
 
@@ -29,7 +30,7 @@ RUN touch /app/data/feed.db && \
     chown ubuntu:ubuntu /app/data/feed.db && \
     chmod 666 /app/data/feed.db
 
-USER ubuntu
+USER ubuntu:ubuntu
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \

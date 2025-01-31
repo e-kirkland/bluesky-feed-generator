@@ -1,6 +1,6 @@
 services:
   api:
-    user: "ubuntu:ubuntu"
+    user: "1001:1001"  # Match the UID:GID from Dockerfile
     container_name: api
     build: .
     ports:
