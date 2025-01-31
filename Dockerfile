@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create data directory for SQLite and set permissions
 RUN mkdir -p /app/data && \
-    chown -R 1000:1000 /app/data && \
     chmod 777 /app/data
 
 # Copy requirements first to leverage Docker cache
@@ -21,19 +20,22 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create a non-root user and switch to it
-RUN useradd -m ubuntu && chown -R ubuntu:ubuntu /app
-USER ubuntu
+RUN useradd -m ubuntu && \
+    chown -R ubuntu:ubuntu /app && \
+    chown -R ubuntu:ubuntu /app/data
 
-# Change permissions for data directory
+# Ensure the database file exists and has proper permissions
 RUN touch /app/data/feed.db && \
     chown ubuntu:ubuntu /app/data/feed.db && \
-    chmod 777 /app/data/feed.db
+    chmod 666 /app/data/feed.db
+
+USER ubuntu
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:5000/health || exit 1
 
 # Expose the port the app runs on
-EXPOSE 8080
+EXPOSE 5000
 
 # Command to run the application is now in docker-compose.yml 
