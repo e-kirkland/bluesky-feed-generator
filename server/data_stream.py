@@ -110,24 +110,30 @@ async def _websocket_client(name: str, operations_callback: Callable, stream_sto
                             logger.debug(f"Message type: {message_type}")
                             
                             if message_type == '#commit':
-                                logger.debug("Processing commit message")
-                                logger.debug(f"Commit data: {data}")
-                                if 'ops' in data:
-                                    logger.debug(f"Found ops in data: {data['ops']}")
-                                    ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(
-                                        seq=data.get('seq', 0),
-                                        repo=data.get('repo', ''),
-                                        ops=data.get('ops', []),
-                                        time=data.get('time', ''),
-                                        blobs=data.get('blocks', [])
-                                    ))
-                                    try:
-                                        operations_callback(ops)
-                                    except Exception as e:
-                                        logger.exception(f'Error in operations callback: {e}')
+                                logger.debug("Received commit header")
+                                # Get the actual commit data in the next message
+                                commit_message = await websocket.recv()
+                                logger.debug(f"Received commit data type: {type(commit_message)}")
+                                
+                                if isinstance(commit_message, bytes):
+                                    commit_data = cbor2.loads(commit_message)
+                                    logger.debug(f"Commit data: {commit_data}")
+                                    
+                                    if 'ops' in commit_data:
+                                        ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(
+                                            seq=commit_data.get('seq', 0),
+                                            repo=commit_data.get('repo', ''),
+                                            ops=commit_data.get('ops', []),
+                                            time=commit_data.get('time', ''),
+                                            blobs=commit_data.get('blocks', [])
+                                        ))
+                                        try:
+                                            operations_callback(ops)
+                                        except Exception as e:
+                                            logger.exception(f'Error in operations callback: {e}')
 
-                                    if state and data.get('seq'):
-                                        state.update_cursor(data['seq'])
+                                        if state and commit_data.get('seq'):
+                                            state.update_cursor(commit_data['seq'])
                             else:
                                 logger.debug(f"Skipping message type: {message_type}")
                         else:
