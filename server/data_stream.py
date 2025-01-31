@@ -5,7 +5,7 @@ import threading
 from typing import Callable, Optional
 
 from atproto import Client, models
-from atproto.firehose import FirehoseSubscribeReposClient, parse_subscribe_repos_message
+from atproto.xrpc_client.websocket import WebsocketClient
 from atproto.exceptions import FirehoseError
 
 from server.database import SubscriptionState
@@ -51,7 +51,7 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
 
 def _run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
     """Run firehose subscription"""
-    client = FirehoseSubscribeReposClient()
+    client = WebsocketClient("wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos")
 
     # Get or create subscription state
     state = SubscriptionState.get_or_create(name)
@@ -77,7 +77,7 @@ def _run(name: str, operations_callback: Callable, stream_stop_event: threading.
 
     while not stream_stop_event.is_set():
         try:
-            client.start(on_message_handler, on_error_handler, cursor=cursor)
+            client.subscribe(on_message_handler, on_error_handler, cursor=cursor)
         except Exception as e:
             logger.exception(f'Error in firehose client: {e}')
             time.sleep(1)
