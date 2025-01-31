@@ -19,10 +19,13 @@ def operations_callback(ops: defaultdict) -> None:
     # Log the total number of posts received
     created_posts = ops[models.ids.AppBskyFeedPost]['created']
     logger.info(f"Received {len(created_posts)} posts from firehose")
+    logger.debug(f"Raw created posts data: {created_posts}")
     
     for created_post in created_posts:
         author = created_post['author']
         record = created_post['record']
+        logger.debug(f"Processing post from {author}")
+        logger.debug(f"Raw record data: {record}")
 
         # Log all posts for debugging
         post_with_images = record.get('embed', {}).get('$type') == 'app.bsky.embed.images'
@@ -43,6 +46,7 @@ def operations_callback(ops: defaultdict) -> None:
             # Handle reply data
             reply = record.get('reply')
             if reply:
+                logger.debug(f"Reply data: {reply}")
                 reply_root = reply.get('root', {}).get('uri')
                 reply_parent = reply.get('parent', {}).get('uri')
 

@@ -24,6 +24,8 @@ _INTERESTED_RECORDS = {
 def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dict:
     """Get operations from message grouped by type"""
     logger.debug(f"Processing message with {len(message.ops)} operations")
+    logger.debug(f"Message data: repo={message.repo}, time={message.time}")
+    logger.debug(f"Raw ops data: {message.ops}")
     
     ops = {
         models.ids.AppBskyFeedPost: {
@@ -48,6 +50,7 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
                 continue
 
             logger.debug(f"Found post: repo={message.repo}, path={path}")
+            logger.debug(f"Post record data: {record}")
             ops[models.ids.AppBskyFeedPost]['created'].append({
                 'uri': f'at://{message.repo}/{path}',
                 'cid': op.get('cid'),
