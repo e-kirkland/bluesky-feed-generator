@@ -1,7 +1,10 @@
 import logging
 from collections import defaultdict
+import time
+import threading
+from typing import Callable, Optional
 
-from atproto import AtUri, CAR, firehose_models, FirehoseSubscribeReposClient, models, parse_subscribe_repos_message
+from atproto import AtUri, CAR, firehose_models, Client, models, parse_subscribe_repos_message
 from atproto.exceptions import FirehoseError
 
 from server.database import SubscriptionState
@@ -14,84 +17,76 @@ _INTERESTED_RECORDS = {
 }
 
 
-def _get_ops_by_type(commit: models.ComAtprotoSyncSubscribeRepos.Commit) -> defaultdict:
-    operation_by_type = defaultdict(lambda: {'created': [], 'deleted': []})
+def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dict:
+    """Get operations from message grouped by type"""
+    ops = {
+        models.ids.AppBskyFeedPost: {
+            'created': [],
+            'deleted': []
+        }
+    }
 
-    car = CAR.from_bytes(commit.blocks)
-    for op in commit.ops:
-        if op.action == 'update':
-            # we are not interested in updates
+    for op in message.ops:
+        if not op.path.startswith('app.bsky.feed.post'):
             continue
 
-        uri = AtUri.from_str(f'at://{commit.repo}/{op.path}')
-
         if op.action == 'create':
-            if not op.cid:
+            if not isinstance(op.record, models.AppBskyFeedPost.Main):
                 continue
 
-            create_info = {'uri': str(uri), 'cid': str(op.cid), 'author': commit.repo}
+            ops[models.ids.AppBskyFeedPost]['created'].append({
+                'uri': f'at://{message.repo}/{op.path}',
+                'cid': op.cid,
+                'author': message.repo,
+                'record': op.record
+            })
+        elif op.action == 'delete':
+            ops[models.ids.AppBskyFeedPost]['deleted'].append({
+                'uri': f'at://{message.repo}/{op.path}'
+            })
 
-            record_raw_data = car.blocks.get(op.cid)
-            if not record_raw_data:
-                continue
-
-            record = models.get_or_create(record_raw_data, strict=False)
-            if record is None:  # unknown record (out of bsky lexicon)
-                continue
-
-            for record_type, record_nsid in _INTERESTED_RECORDS.items():
-                if uri.collection == record_nsid and models.is_record_type(record, record_type):
-                    operation_by_type[record_nsid]['created'].append({'record': record, **create_info})
-                    break
-
-        if op.action == 'delete':
-            operation_by_type[uri.collection]['deleted'].append({'uri': str(uri)})
-
-    return operation_by_type
+    return ops
 
 
-def run(name, operations_callback, stream_stop_event=None):
-    logger.debug('RUNNING STREAM')
-    while stream_stop_event is None or not stream_stop_event.is_set():
+def _run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
+    """Run firehose subscription"""
+    client = FirehoseSubscribeReposClient()
+
+    # Get or create subscription state
+    state = SubscriptionState.get_or_create(name)
+    cursor = state.cursor if state else 0
+
+    def on_message_handler(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> None:
+        """Process message from firehose"""
+        cursor = message.seq
+        ops = _get_ops_by_type(message)
+
+        try:
+            operations_callback(ops)
+        except Exception as e:
+            logger.exception(f'Error in operations callback: {e}')
+
+        # Update cursor in subscription state
+        if state:
+            state.update_cursor(cursor)
+
+    def on_error_handler(e: FirehoseError) -> None:
+        """Handle error from firehose"""
+        logger.error(f'Firehose error: {e}')
+
+    while not stream_stop_event.is_set():
+        try:
+            client.start(on_message_handler, on_error_handler, cursor=cursor)
+        except Exception as e:
+            logger.exception(f'Error in firehose client: {e}')
+            time.sleep(1)
+
+
+def run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
+    """Run firehose subscription in a separate thread"""
+    while not stream_stop_event.is_set():
         try:
             _run(name, operations_callback, stream_stop_event)
-        except FirehoseError as e:
-            if logger.level == logging.DEBUG:
-                raise e
-            logger.error(f'Firehose error: {e}. Reconnecting to the firehose.')
-
-
-def _run(name, operations_callback, stream_stop_event=None):
-    state = SubscriptionState.get_or_none(SubscriptionState.service == name)
-
-    params = None
-    if state:
-        params = models.ComAtprotoSyncSubscribeRepos.Params(cursor=state.cursor)
-
-    client = FirehoseSubscribeReposClient(params)
-
-    if not state:
-        SubscriptionState.create(service=name, cursor=0)
-
-    def on_message_handler(message: firehose_models.MessageFrame) -> None:
-        # stop on next message if requested
-        if stream_stop_event and stream_stop_event.is_set():
-            client.stop()
-            return
-
-        commit = parse_subscribe_repos_message(message)
-        if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
-            return
-
-        # update stored state every ~1k events
-        if commit.seq % 1000 == 0:  # lower value could lead to performance issues
-            logger.debug(f'Updated cursor for {name} to {commit.seq}')
-            client.update_params(models.ComAtprotoSyncSubscribeRepos.Params(cursor=commit.seq))
-            SubscriptionState.update(cursor=commit.seq).where(SubscriptionState.service == name).execute()
-
-        if not commit.blocks:
-            return
-
-        operations_callback(_get_ops_by_type(commit))
-
-    client.start(on_message_handler)
+        except Exception as e:
+            logger.exception(f'Error in firehose subscription: {e}')
+            time.sleep(1)
