@@ -29,7 +29,9 @@ class Post:
         }
         try:
             logger.info(f"Attempting to insert post: {data['uri']}")
+            logger.debug(f"Post data: {data}")
             result = supabase.table('posts').insert(data).execute()
+            logger.debug(f"Supabase response: {result}")
             logger.info(f"Successfully inserted post: {data['uri']}")
             return post
         except Exception as e:

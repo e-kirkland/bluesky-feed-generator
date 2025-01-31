@@ -25,30 +25,36 @@ def operations_callback(ops: defaultdict) -> None:
         record = created_post['record']
 
         # Log all posts for debugging
-        post_with_images = isinstance(record.embed, models.AppBskyEmbedImages.Main)
-        inlined_text = record.text.replace('\n', ' ')
+        post_with_images = record.get('embed', {}).get('$type') == 'app.bsky.embed.images'
+        text = record.get('text', '')
+        inlined_text = text.replace('\n', ' ')
         logger.debug(
             f'NEW POST '
-            f'[CREATED_AT={record.created_at}]'
             f'[AUTHOR={author}]'
             f'[WITH_IMAGE={post_with_images}]'
             f': {inlined_text}'
         )
 
         # Check for TikTok posts
-        if 'tiktok' in record.text.lower():
+        if 'tiktok' in text.lower():
             logger.info(f"Found TikTok post from {author}: {inlined_text[:100]}...")
             reply_root = reply_parent = None
-            if record.reply:
-                reply_root = record.reply.root.uri
-                reply_parent = record.reply.parent.uri
+            
+            # Handle reply data
+            reply = record.get('reply')
+            if reply:
+                reply_root = reply.get('root', {}).get('uri')
+                reply_parent = reply.get('parent', {}).get('uri')
 
-            posts_to_create.append({
+            post_data = {
                 'uri': created_post['uri'],
                 'cid': created_post['cid'],
                 'reply_parent': reply_parent,
                 'reply_root': reply_root
-            })
+            }
+            
+            logger.debug(f"Creating post with data: {post_data}")
+            posts_to_create.append(post_data)
         else:
             logger.debug(f"Skipping non-TikTok post: {inlined_text[:100]}...")
 
