@@ -1,14 +1,7 @@
 import logging
-import json
-import asyncio
-import websockets
 from collections import defaultdict
-import time
-import threading
-from typing import Callable, Optional
-import cbor2
 
-from atproto import Client, models
+from atproto import AtUri, CAR, firehose_models, FirehoseSubscribeReposClient, models, parse_subscribe_repos_message
 from atproto.exceptions import FirehoseError
 
 from server.database import SubscriptionState
@@ -21,143 +14,80 @@ _INTERESTED_RECORDS = {
 }
 
 
-def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dict:
-    """Get operations from message grouped by type"""
-    logger.debug(f"Processing message with {len(message.ops)} operations")
-    logger.debug(f"Message data: repo={message.repo}, time={message.time}")
-    logger.debug(f"Raw ops data: {message.ops}")
-    
-    # Add detailed ops logging
-    for op in message.ops:
-        logger.debug(f"Operation details:")
-        logger.debug(f"  - Action: {op}")
-        for key, value in op.items():
-            logger.debug(f"  - {key}: {value}")
-    
-    ops = {
-        models.ids.AppBskyFeedPost: {
-            'created': [],
-            'deleted': []
-        }
-    }
+def _get_ops_by_type(commit: models.ComAtprotoSyncSubscribeRepos.Commit) -> defaultdict:
+    operation_by_type = defaultdict(lambda: {'created': [], 'deleted': []})
 
-    for op in message.ops:
-        logger.debug(f"Processing operation: path={op.get('path')}, action={op.get('action')}")
-        
-        path = op.get('path', '')
-        if not path.startswith('app.bsky.feed.post'):
-            logger.debug(f"Skipping non-post operation: {path}")
+    car = CAR.from_bytes(commit.blocks)
+    for op in commit.ops:
+        if op.action == 'update':
+            # we are not interested in updates
             continue
 
-        action = op.get('action')
-        if action == 'create':
-            record = op.get('record')
-            if not record:
-                logger.debug("No record in create operation")
+        uri = AtUri.from_str(f'at://{commit.repo}/{op.path}')
+
+        if op.action == 'create':
+            if not op.cid:
                 continue
 
-            logger.debug(f"Found post: repo={message.repo}, path={path}")
-            logger.debug(f"Post record data: {record}")
-            ops[models.ids.AppBskyFeedPost]['created'].append({
-                'uri': f'at://{message.repo}/{path}',
-                'cid': op.get('cid'),
-                'author': message.repo,
-                'record': record
-            })
-        elif action == 'delete':
-            logger.debug(f"Found deleted post: repo={message.repo}, path={path}")
-            ops[models.ids.AppBskyFeedPost]['deleted'].append({
-                'uri': f'at://{message.repo}/{path}'
-            })
+            create_info = {'uri': str(uri), 'cid': str(op.cid), 'author': commit.repo}
 
-    logger.debug(f"Processed message: found {len(ops[models.ids.AppBskyFeedPost]['created'])} created posts and {len(ops[models.ids.AppBskyFeedPost]['deleted'])} deleted posts")
-    return ops
+            record_raw_data = car.blocks.get(op.cid)
+            if not record_raw_data:
+                continue
 
+            record = models.get_or_create(record_raw_data, strict=False)
+            if record is None:  # unknown record (out of bsky lexicon)
+                continue
 
-async def _websocket_client(name: str, operations_callback: Callable, stream_stop_event: threading.Event):
-    """Websocket client for firehose subscription"""
-    uri = "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
-    
-    logger.info("Starting firehose connection...")
-    
-    state = SubscriptionState.get_or_create(name)
-    cursor = state.cursor if state else 0
+            for record_type, record_nsid in _INTERESTED_RECORDS.items():
+                if uri.collection == record_nsid and models.is_record_type(record, record_type):
+                    operation_by_type[record_nsid]['created'].append({'record': record, **create_info})
+                    break
 
-    while not stream_stop_event.is_set():
-        try:
-            logger.info(f"Connecting to firehose with cursor: {cursor}")
-            async with websockets.connect(uri) as websocket:
-                if cursor:
-                    await websocket.send(json.dumps({"cursor": cursor}))
-                logger.info("Successfully connected to firehose")
+        if op.action == 'delete':
+            operation_by_type[uri.collection]['deleted'].append({'uri': str(uri)})
 
-                while not stream_stop_event.is_set():
-                    message = await websocket.recv()
-                    logger.debug(f"Received message type: {type(message)}")
-                    try:
-                        # Try parsing as JSON first
-                        if isinstance(message, str):
-                            logger.debug("Parsing message as JSON")
-                            data = json.loads(message)
-                        # If it's bytes, try CBOR decoding
-                        else:
-                            logger.debug("Parsing message as CBOR")
-                            data = cbor2.loads(message)
-                        
-                        # Handle different message types
-                        if 't' in data:
-                            message_type = data.get('t')
-                            logger.debug(f"Message type: {message_type}")
-                            
-                            if message_type == '#commit':
-                                logger.debug("Received commit header")
-                                # Get the actual commit data in the next message
-                                commit_message = await websocket.recv()
-                                logger.debug(f"Received commit data type: {type(commit_message)}")
-                                
-                                if isinstance(commit_message, bytes):
-                                    commit_data = cbor2.loads(commit_message)
-                                    logger.debug(f"Commit data: {commit_data}")
-                                    
-                                    if 'ops' in commit_data:
-                                        ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(
-                                            seq=commit_data.get('seq', 0),
-                                            repo=commit_data.get('repo', ''),
-                                            ops=commit_data.get('ops', []),
-                                            time=commit_data.get('time', ''),
-                                            blobs=commit_data.get('blocks', [])
-                                        ))
-                                        try:
-                                            operations_callback(ops)
-                                        except Exception as e:
-                                            logger.exception(f'Error in operations callback: {e}')
-
-                                        if state and commit_data.get('seq'):
-                                            state.update_cursor(commit_data['seq'])
-                            else:
-                                logger.debug(f"Skipping message type: {message_type}")
-                        else:
-                            logger.debug(f"Message does not contain type. Keys: {data.keys()}")
-                    except Exception as e:
-                        logger.exception(f'Error processing message: {e}')
-                        continue
-
-        except Exception as e:
-            logger.exception(f'Websocket error: {e}')
-            if not stream_stop_event.is_set():
-                await asyncio.sleep(1)
+    return operation_by_type
 
 
-def _run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
-    """Run firehose subscription"""
-    asyncio.run(_websocket_client(name, operations_callback, stream_stop_event))
-
-
-def run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
-    """Run firehose subscription in a separate thread"""
-    while not stream_stop_event.is_set():
+def run(name, operations_callback, stream_stop_event=None):
+    while stream_stop_event is None or not stream_stop_event.is_set():
         try:
             _run(name, operations_callback, stream_stop_event)
-        except Exception as e:
-            logger.exception(f'Error in firehose subscription: {e}')
-            time.sleep(1)
+        except FirehoseError as e:
+            if logger.level == logging.DEBUG:
+                raise e
+            logger.error(f'Firehose error: {e}. Reconnecting to the firehose.')
+
+
+def _run(name, operations_callback, stream_stop_event=None):
+    state = SubscriptionState.get_or_create(name)
+
+    params = None
+    if state:
+        params = models.ComAtprotoSyncSubscribeRepos.Params(cursor=state.cursor)
+
+    client = FirehoseSubscribeReposClient(params)
+
+    def on_message_handler(message: firehose_models.MessageFrame) -> None:
+        # stop on next message if requested
+        if stream_stop_event and stream_stop_event.is_set():
+            client.stop()
+            return
+
+        commit = parse_subscribe_repos_message(message)
+        if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
+            return
+
+        # update stored state every ~1k events
+        if commit.seq % 1000 == 0:  # lower value could lead to performance issues
+            logger.debug(f'Updated cursor for {name} to {commit.seq}')
+            client.update_params(models.ComAtprotoSyncSubscribeRepos.Params(cursor=commit.seq))
+            state.update_cursor(commit.seq)
+
+        if not commit.blocks:
+            return
+
+        operations_callback(_get_ops_by_type(commit))
+
+    client.start(on_message_handler)
