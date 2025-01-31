@@ -16,35 +16,22 @@ def operations_callback(ops: defaultdict) -> None:
 
     posts_to_create = []
     
-    # Log the total number of posts received
+    # Log the total number of posts received only in debug mode
     created_posts = ops[models.ids.AppBskyFeedPost]['created']
-    logger.info(f"Received {len(created_posts)} posts from firehose")
+    logger.debug(f"Processing {len(created_posts)} posts from firehose")
     
     for created_post in created_posts:
         author = created_post['author']
         record = created_post['record']
-        logger.debug(f"Processing post from {author}")
-        logger.debug(f"Raw record data: {record}")
-
-        # Log all posts for debugging
-        post_with_images = (hasattr(record, 'embed') and 
-                          getattr(record.embed, '$type', None) == 'app.bsky.embed.images')
         
         text = record.text if hasattr(record, 'text') else ''
-        inlined_text = text.replace('\n', ' ')
-        logger.debug(
-            f'NEW POST '
-            f'[AUTHOR={author}]'
-            f'[WITH_IMAGE={post_with_images}]'
-            f': {inlined_text}'
-        )
 
         # Check for TikTok posts
         if 'tiktok' in text.lower():
+            inlined_text = text.replace('\n', ' ')
             logger.info(f"Found TikTok post from {author}: {inlined_text[:100]}...")
-            reply_root = reply_parent = None
             
-            # Handle reply data
+            reply_root = reply_parent = None
             if hasattr(record, 'reply'):
                 reply = record.reply
                 reply_root = reply.root.uri if hasattr(reply, 'root') else None
@@ -59,22 +46,18 @@ def operations_callback(ops: defaultdict) -> None:
             
             logger.debug(f"Creating post with data: {post_data}")
             posts_to_create.append(post_data)
-        else:
-            logger.debug(f"Skipping non-TikTok post: {inlined_text[:100]}...")
 
     posts_to_delete = ops[models.ids.AppBskyFeedPost]['deleted']
     if posts_to_delete:
         post_uris_to_delete = [post['uri'] for post in posts_to_delete]
-        logger.info(f"Attempting to delete posts: {post_uris_to_delete}")
+        logger.info(f"Deleting {len(post_uris_to_delete)} posts")
         Post.delete_many(post_uris_to_delete)
-        logger.debug(f'Deleted from feed: {len(post_uris_to_delete)}')
 
     if posts_to_create:
-        logger.info(f"Attempting to create {len(posts_to_create)} posts")
+        logger.info(f"Storing {len(posts_to_create)} new TikTok posts")
         try:
             for post_dict in posts_to_create:
                 Post.create(**post_dict)
-            logger.debug(f'Added to feed: {len(posts_to_create)}')
         except Exception as e:
             logger.error(f'Error creating posts: {str(e)}')
             raise e

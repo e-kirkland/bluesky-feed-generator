@@ -15,12 +15,12 @@ _INTERESTED_RECORDS = {
 
 
 def _get_ops_by_type(commit: models.ComAtprotoSyncSubscribeRepos.Commit) -> defaultdict:
+    """Get operations from message grouped by type"""
     operation_by_type = defaultdict(lambda: {'created': [], 'deleted': []})
 
     car = CAR.from_bytes(commit.blocks)
     for op in commit.ops:
         if op.action == 'update':
-            # we are not interested in updates
             continue
 
         uri = AtUri.from_str(f'at://{commit.repo}/{op.path}')
@@ -36,7 +36,7 @@ def _get_ops_by_type(commit: models.ComAtprotoSyncSubscribeRepos.Commit) -> defa
                 continue
 
             record = models.get_or_create(record_raw_data, strict=False)
-            if record is None:  # unknown record (out of bsky lexicon)
+            if record is None:
                 continue
 
             for record_type, record_nsid in _INTERESTED_RECORDS.items():
@@ -70,7 +70,6 @@ def _run(name, operations_callback, stream_stop_event=None):
     client = FirehoseSubscribeReposClient(params)
 
     def on_message_handler(message: firehose_models.MessageFrame) -> None:
-        # stop on next message if requested
         if stream_stop_event and stream_stop_event.is_set():
             client.stop()
             return
@@ -79,9 +78,8 @@ def _run(name, operations_callback, stream_stop_event=None):
         if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
             return
 
-        # update stored state every ~1k events
-        if commit.seq % 1000 == 0:  # lower value could lead to performance issues
-            logger.debug(f'Updated cursor for {name} to {commit.seq}')
+        if commit.seq % 1000 == 0:
+            logger.debug(f'Updated cursor to {commit.seq}')
             client.update_params(models.ComAtprotoSyncSubscribeRepos.Params(cursor=commit.seq))
             if state:
                 state.update_cursor(commit.seq)
