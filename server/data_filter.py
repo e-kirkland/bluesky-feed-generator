@@ -19,19 +19,19 @@ def operations_callback(ops: defaultdict) -> None:
         author = created_post['author']
         record = created_post['record']
 
-        # print all texts just as demo that data stream works
+        # Log all posts for debugging
         post_with_images = isinstance(record.embed, models.AppBskyEmbedImages.Main)
         inlined_text = record.text.replace('\n', ' ')
-        # logger.debug(
-        #     f'NEW POST '
-        #     f'[CREATED_AT={record.created_at}]'
-        #     f'[AUTHOR={author}]'
-        #     f'[WITH_IMAGE={post_with_images}]'
-        #     f': {inlined_text}'
-        # )
+        logger.debug(
+            f'NEW POST '
+            f'[CREATED_AT={record.created_at}]'
+            f'[AUTHOR={author}]'
+            f'[WITH_IMAGE={post_with_images}]'
+            f': {inlined_text}'
+        )
 
-        # only tiktok-related posts
         if 'tiktok' in record.text.lower():
+            logger.info(f"Found TikTok post from {author}: {inlined_text[:100]}...")
             reply_root = reply_parent = None
             if record.reply:
                 reply_root = record.reply.root.uri
@@ -47,10 +47,12 @@ def operations_callback(ops: defaultdict) -> None:
     posts_to_delete = ops[models.ids.AppBskyFeedPost]['deleted']
     if posts_to_delete:
         post_uris_to_delete = [post['uri'] for post in posts_to_delete]
+        logger.info(f"Attempting to delete posts: {post_uris_to_delete}")
         Post.delete_many(post_uris_to_delete)
         logger.debug(f'Deleted from feed: {len(post_uris_to_delete)}')
 
     if posts_to_create:
+        logger.info(f"Attempting to create {len(posts_to_create)} posts")
         try:
             for post_dict in posts_to_create:
                 Post.create(**post_dict)

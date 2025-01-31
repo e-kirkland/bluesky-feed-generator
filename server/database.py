@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from supabase import create_client, Client
 from server.config import SUPABASE_URL, SUPABASE_ANON_KEY
+from server.logger import logger
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -26,12 +27,24 @@ class Post:
             'reply_root': post.reply_root,
             'indexed_at': post.indexed_at.isoformat()
         }
-        supabase.table('posts').insert(data).execute()
-        return post
+        try:
+            logger.info(f"Attempting to insert post: {data['uri']}")
+            result = supabase.table('posts').insert(data).execute()
+            logger.info(f"Successfully inserted post: {data['uri']}")
+            return post
+        except Exception as e:
+            logger.error(f"Error inserting post {data['uri']}: {str(e)}")
+            raise
 
     @staticmethod
     def delete_many(uris: List[str]) -> None:
-        supabase.table('posts').delete().in_('uri', uris).execute()
+        try:
+            logger.info(f"Attempting to delete posts: {uris}")
+            result = supabase.table('posts').delete().in_('uri', uris).execute()
+            logger.info(f"Successfully deleted {len(uris)} posts")
+        except Exception as e:
+            logger.error(f"Error deleting posts: {str(e)}")
+            raise
 
     @staticmethod
     def get_recent(limit: int = 20, cursor: Optional[str] = None) -> List['Post']:
@@ -60,21 +73,34 @@ class SubscriptionState:
 
     @staticmethod
     def get_or_create(service: str) -> 'SubscriptionState':
-        result = supabase.table('subscription_states').select('*').eq('service', service).execute()
-        
-        if result.data:
-            return SubscriptionState(service=result.data[0]['service'], 
-                                   cursor=result.data[0]['cursor'])
-        
-        state = SubscriptionState(service=service, cursor=0)
-        supabase.table('subscription_states').insert({
-            'service': state.service,
-            'cursor': state.cursor
-        }).execute()
-        
-        return state
+        try:
+            logger.info(f"Attempting to get/create subscription state for service: {service}")
+            result = supabase.table('subscription_states').select('*').eq('service', service).execute()
+            
+            if result.data:
+                logger.info(f"Found existing subscription state for service: {service}")
+                return SubscriptionState(service=result.data[0]['service'], 
+                                       cursor=result.data[0]['cursor'])
+            
+            logger.info(f"Creating new subscription state for service: {service}")
+            state = SubscriptionState(service=service, cursor=0)
+            supabase.table('subscription_states').insert({
+                'service': state.service,
+                'cursor': state.cursor
+            }).execute()
+            
+            return state
+        except Exception as e:
+            logger.error(f"Error in get_or_create for service {service}: {str(e)}")
+            raise
 
     def update_cursor(self, new_cursor: int) -> None:
-        supabase.table('subscription_states').update({
-            'cursor': new_cursor
-        }).eq('service', self.service).execute()
+        try:
+            logger.info(f"Updating cursor for service {self.service} to {new_cursor}")
+            result = supabase.table('subscription_states').update({
+                'cursor': new_cursor
+            }).eq('service', self.service).execute()
+            logger.info(f"Successfully updated cursor for service {self.service}")
+        except Exception as e:
+            logger.error(f"Error updating cursor for service {self.service}: {str(e)}")
+            raise
