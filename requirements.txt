@@ -5,3 +5,4 @@ gunicorn
 supabase>=1.0.3
 Flask~=2.3.2
 waitress
+websockets>=11.0.3

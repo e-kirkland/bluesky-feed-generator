@@ -1,11 +1,13 @@
 import logging
+import json
+import asyncio
+import websockets
 from collections import defaultdict
 import time
 import threading
 from typing import Callable, Optional
 
 from atproto import Client, models
-from atproto.xrpc_client.websocket import WebsocketClient
 from atproto.exceptions import FirehoseError
 
 from server.database import SubscriptionState
@@ -49,38 +51,45 @@ def _get_ops_by_type(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> dic
     return ops
 
 
-def _run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
-    """Run firehose subscription"""
-    client = WebsocketClient("wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos")
-
-    # Get or create subscription state
+async def _websocket_client(name: str, operations_callback: Callable, stream_stop_event: threading.Event):
+    """Websocket client for firehose subscription"""
+    uri = "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
+    
     state = SubscriptionState.get_or_create(name)
     cursor = state.cursor if state else 0
 
-    def on_message_handler(message: models.ComAtprotoSyncSubscribeRepos.Commit) -> None:
-        """Process message from firehose"""
-        cursor = message.seq
-        ops = _get_ops_by_type(message)
-
-        try:
-            operations_callback(ops)
-        except Exception as e:
-            logger.exception(f'Error in operations callback: {e}')
-
-        # Update cursor in subscription state
-        if state:
-            state.update_cursor(cursor)
-
-    def on_error_handler(e: FirehoseError) -> None:
-        """Handle error from firehose"""
-        logger.error(f'Firehose error: {e}')
-
     while not stream_stop_event.is_set():
         try:
-            client.subscribe(on_message_handler, on_error_handler, cursor=cursor)
+            async with websockets.connect(uri) as websocket:
+                if cursor:
+                    await websocket.send(json.dumps({"cursor": cursor}))
+
+                while not stream_stop_event.is_set():
+                    message = await websocket.recv()
+                    data = json.loads(message)
+                    
+                    if '#commit' in data:
+                        commit_data = data['#commit']
+                        cursor = commit_data.get('seq')
+                        ops = _get_ops_by_type(models.ComAtprotoSyncSubscribeRepos.Commit(**commit_data))
+
+                        try:
+                            operations_callback(ops)
+                        except Exception as e:
+                            logger.exception(f'Error in operations callback: {e}')
+
+                        if state and cursor:
+                            state.update_cursor(cursor)
+
         except Exception as e:
-            logger.exception(f'Error in firehose client: {e}')
-            time.sleep(1)
+            logger.exception(f'Websocket error: {e}')
+            if not stream_stop_event.is_set():
+                await asyncio.sleep(1)
+
+
+def _run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
+    """Run firehose subscription"""
+    asyncio.run(_websocket_client(name, operations_callback, stream_stop_event))
 
 
 def run(name: str, operations_callback: Callable, stream_stop_event: threading.Event) -> None:
