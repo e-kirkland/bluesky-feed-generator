@@ -3,6 +3,6 @@ python-dotenv
 atproto
 gunicorn
 psycopg2-binary
-SQLAlchemy~=2.0.0
+SQLAlchemy>=2.0.0
 Flask~=2.3.2
 waitress
