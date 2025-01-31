@@ -18,7 +18,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "docker-compose.yml,Dockerfile,server,.flaskenv"
+          source: "docker-compose.yml,Dockerfile,server,.flaskenv,requirements.txt,publish_feed.py"
           target: "/code/bluesky-feed-generator"
 
       - name: Deploy to Ubuntu server
