@@ -35,7 +35,12 @@ def index():
 
 @app.route('/.well-known/did.json', methods=['GET'])
 def did_json():
+    app.logger.debug(f"SERVICE_DID: {config.SERVICE_DID}")
+    app.logger.debug(f"HOSTNAME: {config.HOSTNAME}")
+    app.logger.debug(f"Condition: {config.SERVICE_DID.endswith(config.HOSTNAME)}")
+    
     if not config.SERVICE_DID.endswith(config.HOSTNAME):
+        app.logger.warning(f"404 because SERVICE_DID ({config.SERVICE_DID}) doesn't end with HOSTNAME ({config.HOSTNAME})")
         return '', 404
 
     return jsonify({
