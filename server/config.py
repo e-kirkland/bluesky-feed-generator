@@ -5,7 +5,9 @@ from dotenv import load_dotenv
 
 from server.logger import logger
 
+# Set logging levels
 logger.setLevel(logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 load_dotenv()
 
